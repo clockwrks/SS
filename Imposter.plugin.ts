@@ -1,3 +1,7 @@
+/** @name Imposter … @version 0.0.1 */
+import { BdApi } from 'bdapi';
+const { Data, Patcher, React, UI, Webpack } = BdApi;
+
 declare const BdApi: any;
 declare namespace BdApi {
   const Data: any;
