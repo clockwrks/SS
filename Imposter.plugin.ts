@@ -1,14 +1,44 @@
-/** @name Imposter … @version 0.0.1 */
-import { BdApi } from 'bdapi';
-const { Data, Patcher, React, UI, Webpack } = BdApi;
+/** Imposter.plugin.ts - TypeScript port */
 
-declare const BdApi: any;
 declare namespace BdApi {
-  const Data: any;
-  const Patcher: any;
+  // Persistent storage
+  const Data: {
+    load(pluginName: string, key: string): any;
+    save(pluginName: string, key: string, value: any): void;
+    delete?(pluginName: string, key: string): void;
+  };
+
+  // Patcher API
+  const Patcher: {
+    after(
+      id: string,
+      target: any,
+      method: string,
+      callback: (thisObj: any, args: any[], returnValue: any) => any
+    ): void;
+    unpatchAll(id: string): void;
+  };
+
+  // React export
   const React: any;
-  const UI: any;
-  const Webpack: { getStore(store: string): any };
+
+  // UI helpers
+  const UI: {
+    showToast(message: string, options?: { type?: 'info' | 'error' | 'success'; timeout?: number }): void;
+    buildSettingsPanel(options: { settings: any[]; onChange: () => void }): HTMLElement;
+  };
+
+  // Webpack store lookup
+  const Webpack: {
+    getStore(storeName: string): any;
+  };
+
+  // Dispatcher
+  const Dispatcher: {
+    subscribe(event: string, fn: (...args: any[]) => void): void;
+    unsubscribe(event: string, fn: (...args: any[]) => void): void;
+    dispatch?(payload: { type: string; [key: string]: any }): void;
+  };
 }
 
 interface Settings {
@@ -41,10 +71,10 @@ export default class Imposter {
   private config: Config;
 
   constructor(meta?: any) {
-    this.UserStore = Webpack.getStore('UserStore');
-    this.UserProfileStore = Webpack.getStore('UserProfileStore');
-    this.PresenceStore = Webpack.getStore('PresenceStore');
-    this.GuildMemberStore = Webpack.getStore('GuildMemberStore');
+    this.UserStore = BdApi.Webpack.getStore('UserStore');
+    this.UserProfileStore = BdApi.Webpack.getStore('UserProfileStore');
+    this.PresenceStore = BdApi.Webpack.getStore('PresenceStore');
+    this.GuildMemberStore = BdApi.Webpack.getStore('GuildMemberStore');
     this.settings = this.loadSettings();
     this.config = {
       settings: [
@@ -89,11 +119,11 @@ export default class Imposter {
 
   start(): void {
     this.loadPatches();
-    BdApi.Dispatcher?.subscribe('MESSAGE_CREATE', this.handleSendMessage as any);
+    BdApi.Dispatcher.subscribe('MESSAGE_CREATE', this.handleSendMessage as any);
   }
 
   private loadPatches(): void {
-    Patcher.after('spoof-user', this.UserStore, 'getUser', (that: any, args: any[], res: any) => {
+    BdApi.Patcher.after('spoof-user', this.UserStore, 'getUser', (that: any, args: any[], res: any) => {
       if (res?.id === this.settings.targetUserId) {
         const subjectUser = this.UserStore.getUser(this.settings.subjectUserId);
         return {
@@ -109,7 +139,7 @@ export default class Imposter {
       }
     });
 
-    Patcher.after('spoof-user-profile', this.UserProfileStore, 'getUserProfile', (that: any, args: any[], res: any) => {
+    BdApi.Patcher.after('spoof-user-profile', this.UserProfileStore, 'getUserProfile', (that: any, args: any[], res: any) => {
       if (res?.userId === this.settings.targetUserId) {
         const subjectUser = this.UserProfileStore.getUserProfile(this.settings.subjectUserId);
         return {
@@ -123,21 +153,21 @@ export default class Imposter {
       }
     });
 
-    Patcher.after('spoof-user-mutual-guilds', this.UserProfileStore, 'getMutualGuilds', (that: any, args: any[], res: any) => {
+    BdApi.Patcher.after('spoof-user-mutual-guilds', this.UserProfileStore, 'getMutualGuilds', (that: any, args: any[], res: any) => {
       if (args?.[0] === this.settings.targetUserId) {
         const data = this.UserProfileStore.getMutualGuilds(this.settings.subjectUserId);
         if (data) return data;
       }
     });
 
-    Patcher.after('spoof-user-status', this.PresenceStore, 'getPrimaryActivity', (that: any, args: any[], res: any) => {
+    BdApi.Patcher.after('spoof-user-status', this.PresenceStore, 'getPrimaryActivity', (that: any, args: any[], res: any) => {
       if (args?.[0] === this.settings.targetUserId) {
         const data = this.PresenceStore.getPrimaryActivity(this.settings.subjectUserId);
         if (data) return data;
       }
     });
 
-    Patcher.after('spoof-user-guild-profile', this.GuildMemberStore, 'getMember', (that: any, args: any[], res: any) => {
+    BdApi.Patcher.after('spoof-user-guild-profile', this.GuildMemberStore, 'getMember', (that: any, args: any[], res: any) => {
       if (args?.[1] === this.settings.targetUserId) {
         const subjectUser = this.UserStore.getUser(this.settings.subjectUserId);
         const subjectMember = this.GuildMemberStore.getMember(args[0], this.settings.subjectUserId);
@@ -153,39 +183,38 @@ export default class Imposter {
 
   private loadSettings(): Settings {
     try {
-      const saved = Data.load('Imposter', 'settings') as Partial<Settings> | null;
+      const saved = BdApi.Data.load('Imposter', 'settings') as Partial<Settings> | null;
       return { ...this.defaultSettings, ...(saved ?? {}) };
     } catch {
-      UI.showToast('Failed to load settings', { type: 'error' });
+      BdApi.UI.showToast('Failed to load settings', { type: 'error' });
       return this.defaultSettings;
     }
   }
 
   private saveSettings(): void {
     try {
-      Data.save('Imposter', 'settings', this.settings);
+      BdApi.Data.save('Imposter', 'settings', this.settings);
       if (!this.settings.active) {
         ['spoof-user','spoof-user-profile','spoof-user-mutual-guilds','spoof-user-status','spoof-user-guild-profile']
-          .forEach(id => Patcher.unpatchAll(id));
+          .forEach(id => BdApi.Patcher.unpatchAll(id));
       } else {
         this.loadPatches();
       }
     } catch {
-      UI.showToast('Failed to save settings', { type: 'error' });
+      BdApi.UI.showToast('Failed to save settings', { type: 'error' });
     }
   }
 
   stop(): void {
     ['spoof-user','spoof-user-profile','spoof-user-mutual-guilds','spoof-user-status','spoof-user-guild-profile']
-      .forEach(id => Patcher.unpatchAll(id));
+      .forEach(id => BdApi.Patcher.unpatchAll(id));
   }
 
   getSettingsPanel(): HTMLElement {
-    return UI.buildSettingsPanel({ settings: this.config.settings, onChange: () => {} });
+    return BdApi.UI.buildSettingsPanel({ settings: this.config.settings, onChange: () => {} });
   }
 
-  // Placeholder if needed
   private handleSendMessage(...args: any[]): void {
-    // implement if needed
+    // placeholder
   }
 }
