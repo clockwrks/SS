@@ -1,4 +1,4 @@
-/** Imposter.plugin.ts - TypeScript port */
+
 
 declare namespace BdApi {
   // Persistent storage
